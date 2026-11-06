@@ -9,9 +9,11 @@ pub mod config;
 pub mod daemon;
 pub mod error;
 pub mod server;
+pub mod users;
 
 pub use api::{AppState, router};
 pub use config::WebConfig;
 pub use daemon::Daemon;
+pub use users::{Role, UserStore};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

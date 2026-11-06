@@ -69,6 +69,12 @@
           <button class="button suggested" id="apply-button" disabled>Apply</button>
           <button class="button" id="revert-button" disabled>Revert</button>
         </div>
+
+        <div class="sidebar-user" id="sidebar-user" hidden>
+          <svg class="icon icon-small"><use href="#i-server" /></svg>
+          <span id="sidebar-user-name"></span>
+          <span class="role-pill" id="sidebar-user-role"></span>
+        </div>
       </aside>
 
       <main class="content">
@@ -107,8 +113,12 @@
         <h1>LACT</h1>
         <p class="login-sub">Linux GPU Control Application</p>
         <label class="field">
+          <span>Username</span>
+          <input type="text" id="login-username" autocomplete="username" autocapitalize="off" spellcheck="false" autofocus />
+        </label>
+        <label class="field">
           <span>Password</span>
-          <input type="password" id="login-password" autocomplete="current-password" autofocus />
+          <input type="password" id="login-password" autocomplete="current-password" />
         </label>
         <button class="button suggested wide" type="submit">Sign in</button>
         <p class="login-error" id="login-error"></p>

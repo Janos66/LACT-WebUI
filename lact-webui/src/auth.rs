@@ -17,6 +17,7 @@ pub const SESSION_COOKIE: &str = "lact_session";
 
 #[derive(Debug, Clone)]
 pub struct Session {
+    pub username: String,
     pub created: Instant,
     pub last_seen: Instant,
     pub remote: String,
@@ -41,8 +42,8 @@ impl SessionStore {
         self.timeout
     }
 
-    /// Create a new session and return its token.
-    pub async fn create(&self, remote: String) -> String {
+    /// Create a new session for an authenticated user and return its token.
+    pub async fn create(&self, username: &str, remote: String) -> String {
         let token = random_token();
         let now = Instant::now();
 
@@ -51,6 +52,7 @@ impl SessionStore {
         sessions.insert(
             token.clone(),
             Session {
+                username: username.to_owned(),
                 created: now,
                 last_seen: now,
                 remote,
@@ -76,6 +78,15 @@ impl SessionStore {
 
     pub async fn remove(&self, token: &str) {
         self.sessions.write().await.remove(token);
+    }
+
+    /// Drop every session belonging to a user. Used when an account is deleted, disabled or has
+    /// its password changed, so existing cookies stop working immediately.
+    pub async fn invalidate_user(&self, username: &str) {
+        self.sessions
+            .write()
+            .await
+            .retain(|_, session| session.username != username);
     }
 
     pub async fn count(&self) -> usize {
@@ -193,13 +204,26 @@ mod tests {
     #[tokio::test]
     async fn session_lifecycle() {
         let store = SessionStore::new(1);
-        let token = store.create("127.0.0.1".into()).await;
+        let token = store.create("alice", "127.0.0.1".into()).await;
         assert_eq!(token.len(), 64);
         assert!(store.validate(&token).await.is_some());
         assert!(store.validate("nope").await.is_none());
 
         store.remove(&token).await;
         assert!(store.validate(&token).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn invalidating_a_user_drops_only_their_sessions() {
+        let store = SessionStore::new(1);
+        let alice = store.create("alice", "127.0.0.1".into()).await;
+        let bob = store.create("bob", "127.0.0.1".into()).await;
+
+        store.invalidate_user("alice").await;
+
+        assert!(store.validate(&alice).await.is_none());
+        assert!(store.validate(&bob).await.is_some());
+        assert_eq!(store.validate(&bob).await.unwrap().username, "bob");
     }
 
     #[tokio::test]

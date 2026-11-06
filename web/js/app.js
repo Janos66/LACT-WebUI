@@ -12,14 +12,30 @@ import ocPage from "./pages/oc.js";
 import softwarePage from "./pages/software.js";
 import systemPage from "./pages/system.js";
 import thermalsPage from "./pages/thermals.js";
+import usersPage, { changePasswordDialog } from "./pages/users.js";
 
-const PAGES = [infoPage, ocPage, thermalsPage, softwarePage, displaysPage, systemPage, chartsPage];
+const BASE_PAGES = [infoPage, ocPage, thermalsPage, softwarePage, displaysPage, systemPage];
+
+/** Pages visible to the signed-in account. Administration is admin-only. */
+function pages() {
+  return state.me?.role === "admin"
+    ? [...BASE_PAGES, usersPage, chartsPage]
+    : [...BASE_PAGES, chartsPage];
+}
+
+function isAdmin() {
+  return state.me?.role === "admin";
+}
 
 const dom = {
   app: document.getElementById("app"),
   login: document.getElementById("login"),
   loginForm: document.getElementById("login-form"),
   loginPassword: document.getElementById("login-password"),
+  loginUsername: document.getElementById("login-username"),
+  sidebarUser: document.getElementById("sidebar-user"),
+  sidebarUserName: document.getElementById("sidebar-user-name"),
+  sidebarUserRole: document.getElementById("sidebar-user-role"),
   loginError: document.getElementById("login-error"),
   nav: document.getElementById("nav"),
   page: document.getElementById("page"),
@@ -62,7 +78,11 @@ dom.loginForm.addEventListener("submit", async (event) => {
   dom.loginError.textContent = "";
 
   try {
-    await api.login(dom.loginPassword.value);
+    const response = await api.login(
+      dom.loginUsername.value.trim(),
+      dom.loginPassword.value,
+    );
+    set({ me: { username: response.username, role: response.role } });
     dom.loginPassword.value = "";
     await start();
   } catch (error) {
@@ -81,6 +101,9 @@ async function boot() {
     if (session.auth_required && !session.authenticated) {
       showLogin();
       return;
+    }
+    if (session.username) {
+      set({ me: { username: session.username, role: session.role } });
     }
     await start();
   } catch (error) {
@@ -119,8 +142,8 @@ async function start() {
   // Deep links win over the last-used page: `#thermals` opens the thermals page directly.
   const hashPage = location.hash.replace("#", "");
   const storedPage = localStorage.getItem("lact.page") || "info";
-  const pageId = PAGES.some((page) => page.id === hashPage) ? hashPage : storedPage;
-  set({ pageId: PAGES.some((page) => page.id === pageId) ? pageId : "info" });
+  const pageId = pages().some((page) => page.id === hashPage) ? hashPage : storedPage;
+  set({ pageId: pages().some((page) => page.id === pageId) ? pageId : "info" });
 
   buildNav();
   wireChrome();
@@ -139,7 +162,7 @@ async function start() {
 
 async function logout() {
   await api.logout().catch(() => {});
-  set({ authenticated: false, deviceId: null, info: null, config: null, draft: null });
+  set({ authenticated: false, me: null, deviceId: null, info: null, config: null, draft: null });
   showLogin();
 }
 
@@ -272,7 +295,7 @@ function stopPolling() {
 
 function buildNav() {
   dom.nav.replaceChildren(
-    ...PAGES.map((page) => {
+    ...pages().map((page) => {
       const item = el(
         "button",
         { class: `nav-item${page.id === state.pageId ? " active" : ""}`, type: "button", "data-page": page.id },
@@ -332,7 +355,7 @@ function wireChrome() {
 }
 
 function navigate(pageId) {
-  if (!PAGES.some((page) => page.id === pageId)) return;
+  if (!pages().some((page) => page.id === pageId)) return;
   set({ pageId });
   localStorage.setItem("lact.page", pageId);
 
@@ -351,7 +374,7 @@ window.addEventListener("hashchange", () => {
 });
 
 async function renderPage() {
-  const page = PAGES.find((entry) => entry.id === state.pageId) || infoPage;
+  const page = pages().find((entry) => entry.id === state.pageId) || infoPage;
   const token = ++renderToken;
 
   dom.pageTitle.textContent = page.title;
@@ -426,10 +449,31 @@ function makeContext() {
 }
 
 function updateChrome() {
-  const dirty = isDirty();
+  const dirty = isDirty() && isAdmin();
   dom.apply.disabled = !dirty;
   dom.revert.disabled = !dirty;
   dom.dirtyDot.hidden = !dirty;
+
+  // Identity + role-driven restrictions.
+  const admin = isAdmin();
+  dom.app.classList.toggle("read-only", !admin);
+
+  if (state.me) {
+    dom.sidebarUser.hidden = false;
+    dom.sidebarUserName.textContent = state.me.username;
+    dom.sidebarUserRole.textContent = state.me.role;
+    dom.sidebarUserRole.className = `role-pill ${state.me.role === "admin" ? "admin" : ""}`;
+  } else {
+    dom.sidebarUser.hidden = true;
+  }
+
+  if (!admin) {
+    dom.apply.hidden = true;
+    dom.revert.hidden = true;
+  } else {
+    dom.apply.hidden = false;
+    dom.revert.hidden = false;
+  }
 
   const device = state.devices.find((entry) => entry.id === state.deviceId);
   dom.deviceLabel.textContent = device ? deviceLabel(device) : "No devices";
@@ -452,6 +496,16 @@ function updateBanner() {
         connectSocket();
       }
     });
+    return;
+  }
+
+  if (!isAdmin()) {
+    showBanner(
+      `Read-only account (${state.me?.username ?? "operator"}). Monitoring only — changes are rejected by the server.`,
+      "",
+      "",
+      null,
+    );
     return;
   }
 
@@ -702,6 +756,9 @@ function toggleMenu() {
   if (!willShow) return;
 
   const items = [
+    ...(isAdmin() ? [["Users & accounts", "server", () => navigate("users")]] : []),
+    ["Change password", "logout", changePasswordDialog],
+    null,
     ["Process monitor", "gauge", showProcesses],
     null,
     ["Generate debug snapshot", "download", downloadSnapshot],

@@ -261,6 +261,51 @@ textarea {
   padding: 4px 4px 2px;
 }
 
+/* Operator (read-only) mode: the server rejects writes anyway, this just makes it obvious. */
+.read-only .row-control input,
+.read-only .row-control select,
+.read-only .row-control .button:not(.allow-readonly),
+.read-only .segmented button,
+.read-only .switch,
+.read-only .curve-svg {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 2px;
+  font-size: 12.5px;
+  color: var(--dim);
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+.sidebar-user #sidebar-user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-pill {
+  margin-left: auto;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--dim);
+}
+
+.role-pill.admin {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .content {
   display: flex;
   flex-direction: column;

@@ -205,3 +205,31 @@ the whole session). Rendering was verified by DOM text, computed styles, element
 per-page pixel statistics (distinct image hashes, text-pixel counts, sidebar colour) instead.
 `lact-daemon` was built without `display-info`, so the Displays page shows its empty state here;
 the populated path is covered by the mock-daemon test.
+
+## 11. Accounts and roles (added after the first review)
+
+Single shared password replaced by a user database:
+
+* `users.rs` — Argon2id accounts in `/etc/lact/webui-users.yaml` (0600, atomic replace), roles
+  `admin`/`operator`, last-admin protection, immediate session revocation on password/disable/delete.
+* Sessions carry the username; the **role is looked up on every request**, so a demotion or deletion
+  takes effect at once rather than at session expiry.
+* `require_auth` middleware rejects every non-`GET` request from an operator with `403`
+  (self-service password change excepted), after the CSRF check.
+* `/api/users` CRUD (admin only), `/api/me`, `/api/auth/password`.
+* CLI: `--add-user`, `--set-password`, `--remove-user`, `--list-users`, `--password-stdin`.
+* Empty account database => the server refuses to start and prints the command to create one.
+* `scripts/install.sh` elevates with sudo, installs units/binaries, writes the config, creates the
+  first admin and starts both services.
+
+Verified end-to-end against the running daemon:
+
+| Request | Result |
+|---------|--------|
+| anonymous `GET /api/devices` | 401 |
+| `admin` login, then `GET /api/devices` | 200 |
+| `admin` `POST /api/users` | 200 (account created) |
+| `operator` login, then `GET /api/devices` | 200 |
+| `operator` `POST /api/devices/…/fan` | **403** "this account is read-only (operator role)" |
+| `operator` `POST /api/users/…` | **403** |
+| admin sees 8 nav entries (incl. Users); operator sees 7, Apply/Revert hidden, read-only banner | screenshot `users.png`, `operator.png` |

@@ -75,7 +75,8 @@ Open `http://<host>:12800`.
 | `listen` | `0.0.0.0:12800` | Address to bind. Use `127.0.0.1:12800` behind a reverse proxy. |
 | `daemon.socket` | `/run/lactd.sock` | Path to the daemon's unix socket (root's default). |
 | `daemon.tcp` | — | Alternative: `{ tcp: "127.0.0.1:12853" }` to use LACT's TCP listener. |
-| `auth.password_hash` | — | Argon2id hash. **Required** when listening on a non-loopback address. |
+| `auth.users_file` | `/etc/lact/webui-users.yaml` | Account database (root, mode 0600). |
+| `allow_unauthenticated` | `false` | Disable accounts; every request becomes an administrator. |
 | `auth.max_attempts` | `5` | Failed logins per IP before the client is blocked. |
 | `auth.attempt_window_secs` | `60` | Window for the attempt counter. |
 | `session_timeout_hours` | `12` | Idle session lifetime. Sessions live in memory only. |
@@ -84,12 +85,12 @@ Open `http://<host>:12800`.
 | `device_allowlist` | `[]` | Restrict the instance to specific GPU ids (empty = all). |
 | `log` | `info,tower_http=warn` | `tracing` filter, overridable with `RUST_LOG`. |
 
-The server **refuses to start** on a non-loopback address without a password unless
-`allow_unauthenticated: true` is set explicitly.
+The server refuses to start when the account database is empty, and prints the `--add-user` command
+to run. There is no unauthenticated window at first start.
 
 ## Security model
 
-- **Password auth** with Argon2id hashes; the plaintext password is never stored.
+- **Accounts** with Argon2id hashes and two roles (`admin`, `operator`); see *Accounts and roles*.
 - **Sessions**: 256-bit random tokens, `HttpOnly`, `SameSite=Strict`, `Secure` when
   `X-Forwarded-Proto: https` is present. Held in memory, so a restart logs everyone out.
 - **CSRF**: mutating requests must carry `X-LACT-WebUI: 1`. Browsers cannot set custom headers
@@ -232,3 +233,64 @@ compatible with an existing LACT installation — stop the GTK app and enable `l
 ## License
 
 MIT, same as upstream. LACT is Copyright (c) Ilya Zlobintsev.
+
+## Accounts and roles
+
+The web UI has no shared password. Accounts live in a YAML database (default
+`/etc/lact/webui-users.yaml`, mode `0600`, owned by root) and passwords are Argon2id hashes.
+
+| Role | Can do |
+|------|--------|
+| `admin` | Everything: monitor, apply GPU configs, fan curves, power limits, profiles, detach GPUs, manage accounts |
+| `operator` | Monitoring only: every `GET` is allowed, **every mutating request is rejected with `403`** |
+
+The role is resolved from the store on *every* request, so demoting, disabling or deleting an account
+takes effect immediately — existing cookies stop working without waiting for the session timeout.
+
+### First start
+
+```sh
+sudo lact-webui --add-user admin --role admin     # prompts for the password twice
+sudo systemctl enable --now lactd lact-webui
+```
+
+If you start the server with an empty account database it refuses to run and prints exactly that
+command, so there is no unauthenticated window.
+
+### Managing accounts
+
+From the CLI:
+
+```sh
+lact-webui --list-users
+lact-webui --add-user alice --role operator
+lact-webui --set-password alice
+lact-webui --remove-user alice
+```
+
+Or from the **Users** page in the browser (administrators only): create accounts, change roles,
+reset passwords, disable or delete. Safety rails:
+
+- the last active administrator cannot be demoted, disabled or deleted;
+- changing a password or disabling/deleting an account terminates that account's sessions;
+- usernames are limited to `[A-Za-z0-9._-]{2,32}`, passwords must be at least 8 characters.
+
+Any account can change its own password via *Menu → Change password*.
+
+### Installation with sudo
+
+`scripts/install.sh` elevates itself with `sudo` (asking for the sudo password once), installs the
+binaries and units, writes `/etc/lact/webui.yaml`, creates the first administrator and starts both
+services:
+
+```sh
+./scripts/install.sh                       # build + install
+./scripts/install.sh --no-build            # use target/release as-is
+./scripts/install.sh --listen 0.0.0.0:12800
+```
+
+### Opting out
+
+`allow_unauthenticated: true` disables accounts entirely; every request is then treated as an
+administrator. Only use it when something in front (a reverse proxy with SSO, or loopback-only
+access) already authenticates users — the server logs a warning at startup.

@@ -79,8 +79,24 @@ export const api = {
   del: (path) => request(path, { method: "DELETE" }),
 
   session: () => request("/api/auth/session"),
-  login: (password) => request("/api/auth/login", { method: "POST", body: { password } }),
+  login: (username, password) =>
+    request("/api/auth/login", { method: "POST", body: { username, password } }),
   logout: () => request("/api/auth/logout", { method: "POST" }),
+  changePassword: (currentPassword, newPassword) =>
+    request("/api/auth/password", {
+      method: "POST",
+      body: { current_password: currentPassword, new_password: newPassword },
+    }),
+
+  users: {
+    list: () => request("/api/users"),
+    create: (username, password, role) =>
+      request("/api/users", { method: "POST", body: { username, password, role } }),
+    update: (username, patch) =>
+      request(`/api/users/${encodeURIComponent(username)}`, { method: "PUT", body: patch }),
+    remove: (username) =>
+      request(`/api/users/${encodeURIComponent(username)}`, { method: "DELETE" }),
+  },
 
   status: () => request("/api/status"),
   devices: () => request("/api/devices"),

@@ -6,10 +6,15 @@
 > The daemon, the CLI, the config format and all GPU support are unchanged.
 >
 > ```sh
-> lact-webui --hash-password 'your password'   # → paste into /etc/lact/webui.yaml
+> sudo ./scripts/install.sh              # builds, installs, asks for the first admin password
+> # or manually:
+> sudo lact-webui --add-user admin --role admin
 > sudo systemctl enable --now lactd lact-webui
 > # open http://<host>:12800
 > ```
+>
+> Accounts have two roles: **admin** (full control) and **operator** (monitoring only, every write
+> is rejected server-side). Manage them from the Users page or with `lact-webui --add-user`.
 >
 > **Read [docs/WEBUI.md](docs/WEBUI.md)** for installation, the configuration reference, the security
 > model, the full HTTP API and the development guide. `SPEC.md` documents the architecture and the

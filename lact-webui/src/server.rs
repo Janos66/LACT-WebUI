@@ -1,6 +1,6 @@
 //! Server bootstrap shared by the `lact-webui` binary and the `lact` launcher.
 
-use crate::{AppState, Daemon, WebConfig, api::router};
+use crate::{AppState, Daemon, UserStore, WebConfig, api::router};
 use anyhow::Context;
 use std::{net::SocketAddr, path::PathBuf};
 use tracing::{info, warn};
@@ -8,12 +8,28 @@ use tracing_subscriber::EnvFilter;
 
 pub async fn serve(config: WebConfig) -> anyhow::Result<()> {
     let addr = config.socket_addr()?;
+
+    let users = UserStore::load(&config.auth.users_file)?;
+
+    // The "proper" answer to an unconfigured instance: refuse, but say exactly what to run.
+    if config.auth_enabled() && users.is_empty().await {
+        anyhow::bail!(
+            "no accounts are configured in {} yet.\n\
+             Create the first administrator, then start again:\n\n  \
+             lact-webui --add-user admin --role admin\n\n\
+             Add monitoring-only accounts later with `--role operator`, or from the Users page.",
+            users.path().display()
+        );
+    }
+
     let daemon_endpoint = config.daemon.clone();
     let daemon = Daemon::spawn(daemon_endpoint.clone());
 
-    let state = AppState::new(config.clone(), daemon);
+    let state = AppState::new(config.clone(), daemon, users);
     let sessions = state.sessions.clone();
     let auth_enabled = state.auth_enabled();
+    let user_count = state.users.len().await;
+    let users_path = state.users.path().display().to_string();
     let app = router(state);
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -25,14 +41,13 @@ pub async fn serve(config: WebConfig) -> anyhow::Result<()> {
         crate::VERSION
     );
 
-    if !auth_enabled {
-        if config.allow_unauthenticated {
-            warn!("authentication is DISABLED — anyone who can reach this port controls the GPU");
-        } else {
-            info!("loopback-only instance without authentication");
-        }
+    if config.allow_unauthenticated {
+        warn!("authentication is DISABLED — anyone who can reach this port has administrator rights");
     } else {
-        info!("password authentication enabled");
+        info!(
+            "authentication enabled, {user_count} account(s) in {users_path}"
+        );
+        debug_assert!(auth_enabled);
     }
 
     axum::serve(
@@ -58,6 +73,7 @@ pub struct RunOptions {
     pub allow_unauthenticated: bool,
     pub daemon: Option<crate::config::DaemonEndpoint>,
     pub log: Option<String>,
+    pub users_file: Option<PathBuf>,
 }
 
 /// Load configuration, initialise logging and run the server on a fresh multi-threaded runtime.
@@ -69,6 +85,7 @@ pub fn run_standalone(options: RunOptions) -> anyhow::Result<()> {
         allow_unauthenticated,
         daemon,
         log,
+        users_file,
     } = options;
 
     let (mut config, path) = WebConfig::load(config_path.as_deref())?;
@@ -84,6 +101,9 @@ pub fn run_standalone(options: RunOptions) -> anyhow::Result<()> {
     }
     if let Some(log) = log {
         config.log = log;
+    }
+    if let Some(users_file) = users_file {
+        config.auth.users_file = users_file;
     }
 
     init_tracing(&config.log);

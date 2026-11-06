@@ -10,9 +10,9 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use lact_webui::{
-    AppState, Daemon, WebConfig,
+    AppState, Daemon, Role, UserStore, WebConfig,
     api::router,
-    config::{DaemonEndpoint, hash_password},
+    config::DaemonEndpoint,
 };
 use serde_json::{Value, json};
 use std::{path::PathBuf, sync::atomic::{AtomicU32, Ordering}};
@@ -225,30 +225,45 @@ async fn spawn_mock_daemon(path: PathBuf) {
 }
 
 async fn test_app(auth: bool) -> (axum::Router, PathBuf) {
+    test_app_with_roles(auth).await.0
+}
+
+/// Build the router with an account database. When `auth` is true it contains one admin
+/// (`admin`/`correct horse`) and one operator (`viewer`/`correct horse`).
+async fn test_app_with_roles(auth: bool) -> ((axum::Router, PathBuf), tempfile::TempDir) {
     let path = socket_path();
     spawn_mock_daemon(path.clone()).await;
 
-    let mut config = WebConfig {
+    let dir = tempfile::tempdir().unwrap();
+    let users_file = dir.path().join("users.yaml");
+    let users = UserStore::load(&users_file).unwrap();
+
+    if auth {
+        users.create("admin", "correct horse", Role::Admin).await.unwrap();
+        users.create("viewer", "correct horse", Role::Operator).await.unwrap();
+    }
+
+    let config = WebConfig {
         listen: "127.0.0.1:0".to_owned(),
         daemon: DaemonEndpoint::Socket { socket: path.clone() },
         allow_unauthenticated: !auth,
+        auth: lact_webui::config::AuthConfig {
+            users_file,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
-    if auth {
-        config.auth.password_hash = Some(hash_password("correct horse").unwrap());
-    }
-
     let daemon = Daemon::spawn(config.daemon.clone());
-    let state = AppState::new(config, daemon);
-    (router(state), path)
+    let state = AppState::new(config, daemon, users);
+    ((router(state), path), dir)
 }
 
 fn get(uri: &str) -> Request<Body> {
     Request::builder().uri(uri).body(Body::empty()).unwrap()
 }
 
-fn post_login(password: &str) -> Request<Body> {
+fn post_login(username: &str, password: &str) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri("/api/auth/login")
@@ -258,7 +273,9 @@ fn post_login(password: &str) -> Request<Body> {
             [127, 0, 0, 1],
             40000,
         ))))
-        .body(Body::from(format!(r#"{{"password":"{password}"}}"#)))
+        .body(Body::from(format!(
+            r#"{{"username":"{username}","password":"{password}"}}"#
+        )))
         .unwrap()
 }
 
@@ -396,13 +413,13 @@ async fn requires_login_when_auth_enabled() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     // Wrong password is rejected.
-    let response = app.clone().oneshot(post_login("wrong")).await.unwrap();
+    let response = app.clone().oneshot(post_login("admin", "wrong")).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     // Correct password returns a session cookie.
     let response = app
         .clone()
-        .oneshot(post_login("correct horse"))
+        .oneshot(post_login("admin", "correct horse"))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -437,7 +454,7 @@ async fn mutations_require_csrf_header() {
 
     let login = app
         .clone()
-        .oneshot(post_login("correct horse"))
+        .oneshot(post_login("admin", "correct horse"))
         .await
         .unwrap();
 
@@ -509,14 +526,20 @@ async fn reports_daemon_errors_as_conflict() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
+    let dir = tempfile::tempdir().unwrap();
     let config = WebConfig {
         listen: "127.0.0.1:0".to_owned(),
         daemon: DaemonEndpoint::Socket { socket: path.clone() },
         allow_unauthenticated: true,
+        auth: lact_webui::config::AuthConfig {
+            users_file: dir.path().join("users.yaml"),
+            ..Default::default()
+        },
         ..Default::default()
     };
 
-    let state = AppState::new(config.clone(), Daemon::spawn(config.daemon.clone()));
+    let users = UserStore::load(&config.auth.users_file).unwrap();
+    let state = AppState::new(config.clone(), Daemon::spawn(config.daemon.clone()), users);
     let app = router(state);
 
     let response = app.oneshot(get("/api/devices/x/stats")).await.unwrap();
@@ -524,6 +547,239 @@ async fn reports_daemon_errors_as_conflict() {
 
     let body = body_json(response).await;
     assert!(body["error"].as_str().unwrap().contains("device is busy"));
+
+    let _ = std::fs::remove_file(path);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Roles
+// ---------------------------------------------------------------------------------------------
+
+async fn login_cookie(app: &axum::Router, username: &str, password: &str) -> String {
+    let response = app
+        .clone()
+        .oneshot(post_login(username, password))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK, "login for {username} failed");
+
+    response
+        .headers()
+        .get(header::SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned()
+}
+
+fn request(method: &str, uri: &str, cookie: &str) -> Request<Body> {
+    request_with_body(method, uri, cookie, "")
+}
+
+fn request_with_body(method: &str, uri: &str, cookie: &str, body: &str) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::COOKIE, cookie)
+        .header("x-lact-webui", "1")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_owned()))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn operator_can_monitor_but_not_change_anything() {
+    let ((app, path), _dir) = test_app_with_roles(true).await;
+    let cookie = login_cookie(&app, "viewer", "correct horse").await;
+
+    // Monitoring is allowed.
+    let response = app
+        .clone()
+        .oneshot(get_with_cookie("/api/devices/0000:03:00.0/stats", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(get_with_cookie("/api/status", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Every mutating path is refused, even with a valid session and CSRF header.
+    for (method, uri) in [
+        ("PUT", "/api/devices/0000:03:00.0/config"),
+        ("POST", "/api/devices/0000:03:00.0/fan"),
+        ("POST", "/api/devices/0000:03:00.0/power-cap"),
+        ("POST", "/api/overdrive/enable"),
+        ("POST", "/api/snapshot"),
+        ("POST", "/api/users"),
+        ("DELETE", "/api/users/viewer"),
+    ] {
+        let response = app.clone().oneshot(request(method, uri, &cookie)).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "{method} {uri} should be forbidden for an operator"
+        );
+    }
+
+    // ...but the account list is not readable either.
+    let response = app.clone().oneshot(get_with_cookie("/api/users", &cookie)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn admin_can_manage_accounts() {
+    let ((app, path), _dir) = test_app_with_roles(true).await;
+    let cookie = login_cookie(&app, "admin", "correct horse").await;
+
+    // Create an operator account.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/users")
+                .header(header::COOKIE, &cookie)
+                .header("x-lact-webui", "1")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"username":"tech","password":"workshop42","role":"operator"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // The new account can log in and is read-only.
+    let tech_cookie = login_cookie(&app, "tech", "workshop42").await;
+    let response = app
+        .clone()
+        .oneshot(request("POST", "/api/devices/0000:03:00.0/fan", &tech_cookie))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Promote it to admin, then it may write.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/users/tech")
+                .header(header::COOKIE, &cookie)
+                .header("x-lact-webui", "1")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"role":"admin"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(request_with_body(
+            "POST",
+            "/api/devices/0000:03:00.0/fan",
+            &tech_cookie,
+            r#"{"enabled":false}"#,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "promotion must take effect without a new login"
+    );
+
+    // The list shows both accounts plus the seeded ones.
+    let response = app
+        .clone()
+        .oneshot(get_with_cookie("/api/users", &cookie))
+        .await
+        .unwrap();
+    let body = body_json(response).await;
+    let names: Vec<&str> = body["users"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|user| user["username"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"admin") && names.contains(&"tech") && names.contains(&"viewer"));
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn cannot_remove_the_last_admin() {
+    let ((app, path), _dir) = test_app_with_roles(true).await;
+    let cookie = login_cookie(&app, "admin", "correct horse").await;
+
+    // Demoting the only admin is refused by the store and surfaces as 400.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/users/admin")
+                .header(header::COOKIE, &cookie)
+                .header("x-lact-webui", "1")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"role":"operator"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let response = app
+        .clone()
+        .oneshot(request("DELETE", "/api/users/admin", &cookie))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn deleting_an_account_revokes_its_session_immediately() {
+    let ((app, path), _dir) = test_app_with_roles(true).await;
+    let admin_cookie = login_cookie(&app, "admin", "correct horse").await;
+    let viewer_cookie = login_cookie(&app, "viewer", "correct horse").await;
+
+    // The operator session works.
+    let response = app
+        .clone()
+        .oneshot(get_with_cookie("/api/status", &viewer_cookie))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(request("DELETE", "/api/users/viewer", &admin_cookie))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // The old cookie must stop working without waiting for the session timeout.
+    let response = app
+        .clone()
+        .oneshot(get_with_cookie("/api/status", &viewer_cookie))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     let _ = std::fs::remove_file(path);
 }

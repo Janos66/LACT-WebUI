@@ -4,7 +4,7 @@
 //! empty (or missing) file is valid — except that serving on a non-loopback address without a
 //! password is refused unless `allow_unauthenticated` is explicitly set.
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Display},
@@ -53,8 +53,8 @@ impl Default for WebConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AuthConfig {
-    /// Argon2id hash of the password. Generate one with `lact-webui --hash-password`.
-    pub password_hash: Option<String>,
+    /// Account database. Created by `lact-webui --add-user`, owned by root with mode 0600.
+    pub users_file: PathBuf,
     /// Maximum failed login attempts per window before the client is blocked.
     pub max_attempts: u32,
     pub attempt_window_secs: u64,
@@ -63,7 +63,7 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            password_hash: None,
+            users_file: PathBuf::from(crate::users::DEFAULT_USERS_FILE),
             max_attempts: 5,
             attempt_window_secs: 60,
         }
@@ -122,32 +122,14 @@ impl WebConfig {
             .with_context(|| format!("invalid listen address `{}`", self.listen))
     }
 
-    /// Reject configurations that would expose GPU control to the network without a password.
     pub fn validate(&self) -> anyhow::Result<()> {
-        let addr = self.socket_addr()?;
-
-        if self.allow_unauthenticated {
-            return Ok(());
-        }
-
-        if self.auth.password_hash.is_none() {
-            if addr.ip().is_loopback() {
-                return Ok(());
-            }
-
-            bail!(
-                "refusing to listen on {} without authentication.\n\
-                 Set `auth.password_hash` (see `lact-webui --hash-password`) or, if a reverse \
-                 proxy authenticates users for you, set `allow_unauthenticated: true`.",
-                self.listen
-            );
-        }
-
+        self.socket_addr()?;
         Ok(())
     }
 
+    /// Authentication is on unless the operator explicitly opted out (reverse-proxy setups).
     pub fn auth_enabled(&self) -> bool {
-        !self.allow_unauthenticated && self.auth.password_hash.is_some()
+        !self.allow_unauthenticated
     }
 }
 

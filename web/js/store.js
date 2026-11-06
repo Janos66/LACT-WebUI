@@ -6,6 +6,7 @@ const HISTORY_LENGTH = 600;
 export const state = {
   authenticated: false,
   authRequired: false,
+  me: null,
   status: null,
   devices: [],
   deviceId: null,

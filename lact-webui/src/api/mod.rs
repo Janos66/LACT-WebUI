@@ -4,6 +4,7 @@ pub mod files;
 pub mod gpu;
 pub mod hardware;
 pub mod profiles;
+pub mod users;
 pub mod ws;
 
 use crate::{
@@ -11,14 +12,15 @@ use crate::{
     config::WebConfig,
     daemon::Daemon,
     error::{ApiError, ApiResult},
+    users::{Role, UserStore},
 };
 use axum::{
     Json, Router,
-    extract::{ConnectInfo, Request, State},
+    extract::{ConnectInfo, Extension, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use lact_schema::Request as DaemonRequest;
 use serde::Deserialize;
@@ -41,12 +43,13 @@ pub struct AppState {
     pub sessions: SessionStore,
     pub limiter: Arc<LoginLimiter>,
     pub config: Arc<WebConfig>,
+    pub users: Arc<UserStore>,
     pub started: Instant,
     pub version: &'static str,
 }
 
 impl AppState {
-    pub fn new(config: WebConfig, daemon: Daemon) -> Self {
+    pub fn new(config: WebConfig, daemon: Daemon, users: UserStore) -> Self {
         let limiter = Arc::new(LoginLimiter::new(&config.auth));
         let sessions = SessionStore::new(config.session_timeout_hours);
 
@@ -55,6 +58,7 @@ impl AppState {
             sessions,
             limiter,
             config: Arc::new(config),
+            users: Arc::new(users),
             started: Instant::now(),
             version: env!("CARGO_PKG_VERSION"),
         }
@@ -63,6 +67,19 @@ impl AppState {
     pub fn auth_enabled(&self) -> bool {
         self.config.auth_enabled()
     }
+
+    /// Whether an account database exists. With no users the server refuses to start (see
+    /// `server::prepare`), so this is only observable in tests and in opt-out deployments.
+    pub async fn has_users(&self) -> bool {
+        !self.users.is_empty().await
+    }
+}
+
+/// The authenticated caller, injected by [`require_auth`].
+#[derive(Debug, Clone)]
+pub struct AuthUser {
+    pub username: String,
+    pub role: Role,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -75,6 +92,10 @@ pub fn router(state: AppState) -> Router {
     let protected = Router::new()
         .route("/api/status", get(status))
         .route("/api/system", get(system_info))
+        .route("/api/me", get(me))
+        .route("/api/auth/password", post(change_password))
+        .route("/api/users", get(users::list).post(users::create))
+        .route("/api/users/{name}", put(users::update).delete(users::delete))
         .route("/api/devices", get(gpu::list_devices))
         .route("/api/devices/{id}/info", get(gpu::device_info))
         .route("/api/devices/{id}/info-rows", get(gpu::info_rows))
@@ -131,7 +152,8 @@ pub fn router(state: AppState) -> Router {
 
 #[derive(Deserialize)]
 pub struct LoginBody {
-    password: String,
+    pub username: String,
+    pub password: String,
 }
 
 async fn login(
@@ -156,27 +178,19 @@ async fn login(
         ));
     }
 
-    let hash = state
-        .config
-        .auth
-        .password_hash
-        .as_deref()
-        .ok_or_else(|| ApiError::internal("no password configured"))?;
+    let username = body.username.trim().to_owned();
 
-    let password = body.password;
-    let hash_owned = hash.to_owned();
-    let valid = tokio::task::spawn_blocking(move || crate::config::verify_password(&password, &hash_owned))
-        .await
-        .unwrap_or(false);
+    let role = state.users.authenticate(&username, &body.password).await;
 
-    if !valid {
+    let Some(role) = role else {
         state.limiter.record_failure(ip).await;
-        warn!("failed login attempt from {ip}");
-        return Err(ApiError::unauthorized("wrong password"));
-    }
+        // Deliberately identical for "no such user" and "wrong password".
+        warn!("failed login attempt for '{username}' from {ip}");
+        return Err(ApiError::unauthorized("wrong username or password"));
+    };
 
     state.limiter.record_success(ip).await;
-    let token = state.sessions.create(ip.to_string()).await;
+    let token = state.sessions.create(&username, ip.to_string()).await;
 
     let secure = headers
         .get("x-forwarded-proto")
@@ -190,7 +204,12 @@ async fn login(
         if secure { "; Secure" } else { "" }
     );
 
-    let mut response = Json(json!({"ok": true})).into_response();
+    let mut response = Json(json!({
+        "ok": true,
+        "username": username,
+        "role": role,
+    }))
+    .into_response();
     response.headers_mut().insert(
         header::SET_COOKIE,
         HeaderValue::from_str(&cookie).map_err(|err| ApiError::internal(err.to_string()))?,
@@ -213,20 +232,81 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<
 }
 
 async fn session_info(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    let authenticated = if !state.auth_enabled() {
-        true
-    } else {
-        match session_token(&headers) {
-            Some(token) => state.sessions.validate(token).await.is_some(),
-            None => false,
+    let mut username = None;
+    let mut role = None;
+
+    if !state.auth_enabled() {
+        username = Some("anonymous".to_owned());
+        role = Some(Role::Admin);
+    } else if let Some(token) = session_token(&headers) {
+        if let Some(session) = state.sessions.validate(token).await {
+            if let Some(current) = state.users.role_of(&session.username).await {
+                username = Some(session.username);
+                role = Some(current);
+            }
         }
-    };
+    }
 
     Ok(Json(json!({
-        "authenticated": authenticated,
+        "authenticated": username.is_some(),
         "auth_required": state.auth_enabled(),
+        "username": username,
+        "role": role,
         "version": state.version,
+        "user_count": state.users.len().await,
     })))
+}
+
+async fn me(Extension(auth): Extension<AuthUser>) -> Json<Value> {
+    Json(json!({
+        "username": auth.username,
+        "role": auth.role,
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct PasswordBody {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+/// Change your own password. Allowed for both roles, and it invalidates every other session.
+async fn change_password(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+    headers: HeaderMap,
+    Json(body): Json<PasswordBody>,
+) -> ApiResult<Response> {
+    if state.users.authenticate(&auth.username, &body.current_password).await.is_none() {
+        return Err(ApiError::unauthorized("current password is wrong"));
+    }
+
+    if let Err(err) = state.users.set_password(&auth.username, &body.new_password).await {
+        return Err(ApiError::bad_request(err.to_string()));
+    }
+
+    state.sessions.invalidate_user(&auth.username).await;
+
+    // Keep this browser logged in with a fresh session.
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .and_then(|value| value.trim().parse::<IpAddr>().ok())
+        .unwrap_or(IpAddr::from([0, 0, 0, 0]));
+
+    let token = state.sessions.create(&auth.username, ip.to_string()).await;
+    let cookie = format!(
+        "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
+        state.sessions.timeout().as_secs()
+    );
+
+    let mut response = Json(json!({"ok": true})).into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&cookie).map_err(|err| ApiError::internal(err.to_string()))?,
+    );
+    Ok(response)
 }
 
 async fn status(State(state): State<AppState>) -> ApiResult<Json<Value>> {
@@ -261,28 +341,59 @@ async fn system_info(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 // Middleware
 // ---------------------------------------------------------------------------------------------
 
-async fn require_auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
-    if state.auth_enabled() {
-        let token = session_token(req.headers());
-        let Some(token) = token else {
-            return ApiError::unauthorized("not logged in").into_response();
-        };
+async fn require_auth(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    // Explicit opt-out (reverse proxy / loopback): treat every request as an administrator.
+    if !state.auth_enabled() {
+        req.extensions_mut().insert(AuthUser {
+            username: "anonymous".to_owned(),
+            role: Role::Admin,
+        });
+        return next.run(req).await;
+    }
 
-        if state.sessions.validate(token).await.is_none() {
-            return ApiError::unauthorized("session expired").into_response();
-        }
+    let Some(token) = session_token(req.headers()) else {
+        return ApiError::unauthorized("not logged in").into_response();
+    };
+    let token = token.to_owned();
 
-        let method = req.method();
-        let mutating = !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS);
+    let Some(session) = state.sessions.validate(&token).await else {
+        return ApiError::unauthorized("session expired").into_response();
+    };
 
-        if mutating && req.headers().get(CSRF_HEADER).is_none() {
+    // Resolve the role from the store on every request so demotion, disabling and deletion take
+    // effect immediately instead of when the session happens to expire.
+    let Some(role) = state.users.role_of(&session.username).await else {
+        state.sessions.remove(&token).await;
+        return ApiError::unauthorized("account disabled or removed").into_response();
+    };
+
+    let mutating = !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
+    let path = req.uri().path().to_owned();
+
+    if mutating {
+        if req.headers().get(CSRF_HEADER).is_none() {
             return ApiError::new(
                 StatusCode::FORBIDDEN,
                 format!("missing {CSRF_HEADER} header"),
             )
             .into_response();
         }
+
+        // Operators may only change their own password.
+        let self_service = path == "/api/auth/password";
+        if !role.is_admin() && !self_service {
+            return ApiError::new(
+                StatusCode::FORBIDDEN,
+                "this account is read-only (operator role)",
+            )
+            .into_response();
+        }
     }
+
+    req.extensions_mut().insert(AuthUser {
+        username: session.username,
+        role,
+    });
 
     next.run(req).await
 }
