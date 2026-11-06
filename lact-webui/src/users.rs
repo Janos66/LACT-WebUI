@@ -118,19 +118,46 @@ impl UserStore {
         })
     }
 
+    /// Re-read the users file when it changed on disk. The account-management CLI subcommands
+    /// (`--add-user`, `--set-password`, `--remove-user`, `--disable-user`) edit the file while
+    /// the server keeps running, so without this those changes would only appear after a restart
+    /// and revocation would not be immediate. The CLI writes the file atomically (rename), so a
+    /// reader never sees a half-written file; a missing file is treated as an empty store.
+    /// Re-read the users file. The account-management CLI subcommands edit the file while the
+    /// server keeps running, so every account check re-reads it: this makes external changes
+    /// (create, set-password, disable, remove) take effect without a restart and revocation
+    /// immediate. The file is a small YAML document, so a per-request read is trivial. When the
+    /// file cannot be read or parsed, the last known-good snapshot is kept so a transient bad
+    /// file cannot lock everybody out.
+    async fn reload_from_disk(&self) {
+        let contents = match std::fs::read_to_string(&self.path).ok() {
+            Some(contents) => contents,
+            None => return,
+        };
+
+        let Some(file) = serde_norway::from_str::<UsersFile>(&contents).ok() else {
+            return;
+        };
+
+        *self.users.write().await = file.users;
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
 
     pub async fn is_empty(&self) -> bool {
+        self.reload_from_disk().await;
         self.users.read().await.is_empty()
     }
 
     pub async fn len(&self) -> usize {
+        self.reload_from_disk().await;
         self.users.read().await.len()
     }
 
     pub async fn count_admins(&self) -> usize {
+        self.reload_from_disk().await;
         self.users
             .read()
             .await
@@ -140,6 +167,7 @@ impl UserStore {
     }
 
     pub async fn list(&self) -> Vec<UserInfo> {
+        self.reload_from_disk().await;
         self.users
             .read()
             .await
@@ -163,6 +191,7 @@ impl UserStore {
     }
 
     pub async fn is_disabled_or_missing(&self, username: &str) -> bool {
+        self.reload_from_disk().await;
         self.users
             .read()
             .await
@@ -172,6 +201,7 @@ impl UserStore {
 
     /// Verify credentials. The Argon2 work happens on a blocking thread.
     pub async fn authenticate(&self, username: &str, password: &str) -> Option<Role> {
+        self.reload_from_disk().await;
         let (hash, role, disabled) = {
             let users = self.users.read().await;
             let user = users.get(username)?;
@@ -383,6 +413,33 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = UserStore::load(dir.path().join("users.yaml")).unwrap();
         (store, dir)
+    }
+
+    /// The CLI subcommands edit the users file while the server runs; the store must pick
+    /// those changes up without a restart, or revocation is not immediate.
+    #[tokio::test]
+    async fn picks_up_external_changes() {
+        let (store, dir) = store().await;
+        store.create("alice", "correct horse", Role::Admin).await.unwrap();
+
+        // Simulate a CLI edit: rewrite the file with the account disabled.
+        let path = dir.path().join("users.yaml");
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let edited = contents.replace("disabled: false", "disabled: true");
+        assert_ne!(edited, contents);
+        std::fs::write(&path, edited).unwrap();
+
+        assert_eq!(store.authenticate("alice", "correct horse").await, None);
+        assert!(store.is_disabled_or_missing("alice").await);
+
+        // Simulate the CLI creating a new account in the same file.
+        let mut edited = std::fs::read_to_string(&path).unwrap();
+        let added = edited.replace("users:", "users:\n  newuser:\n    password_hash: $argon2id$v=19$m=19456,t=2,p=1$x$y\n    role: operator\n    disabled: false\n    created_at: 1");
+        std::fs::write(&path, added).unwrap();
+
+        assert_eq!(store.is_disabled_or_missing("newuser").await, false);
+        assert_eq!(store.authenticate("alice", "correct horse").await, None);
+        assert_eq!(store.authenticate("alice", "correct horse").await, None);
     }
 
     #[tokio::test]

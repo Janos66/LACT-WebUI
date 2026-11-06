@@ -17,8 +17,8 @@ ProtectHome=read-only
 ProtectSystem=strict
 PrivateTmp=true
 ReadWritePaths=/run /var/log
-# Hardening: the web UI needs no device access of its own.
-DevicePolicy=closed
+# DevicePolicy is intentionally left at the default (no device filtering): nvme smart-log needs
+# the NVMe device nodes; see the comment above.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]

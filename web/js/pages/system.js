@@ -231,8 +231,8 @@ function buildNvmeSection(data) {
     add("Firmware", drive.firmware || "—");
     add("Capacity", fmt.bytes(drive.size_bytes));
 
-    if (temperature !== null) add("Temperature", `${temperature} °C`);
-    if (smart.percentage_used !== undefined) add("Wear", `${smart.percentage_used} %`);
+    if (temperature !== null) add("Temperature", fmt.temp(temperature));
+    if (smart.percent_used !== undefined) add("Wear", `${smart.percent_used} %`);
     if (smart.power_on_hours !== undefined) add("Power-on hours", fmt.number(smart.power_on_hours));
     if (smart.data_units_written !== undefined) {
       add("Data written", fmt.bytes(Number(smart.data_units_written) * 512000));

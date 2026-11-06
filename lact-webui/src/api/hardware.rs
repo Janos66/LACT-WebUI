@@ -340,9 +340,14 @@ pub async fn nvme() -> Json<Value> {
         .unwrap_or(&empty);
 
     for device in devices {
+        // Prefer the generic character device (/dev/ngXnY): opening the block node can fail with
+        // "device busy" when it is held by a filesystem/multipath layer, while the char device
+        // always answers smart-log queries. Fall back to DevicePath when GenericPath is missing.
         let node = device
-            .get("DevicePath")
+            .get("GenericPath")
             .and_then(Value::as_str)
+            .filter(|path| !path.is_empty())
+            .or_else(|| device.get("DevicePath").and_then(Value::as_str))
             .unwrap_or_default()
             .to_owned();
 
@@ -352,6 +357,14 @@ pub async fn nvme() -> Json<Value> {
             run("nvme", &["smart-log", "--output-format=json", &node])
                 .await
                 .and_then(|raw| serde_json::from_str(&raw).ok())
+                .map(|mut smart: Value| {
+                    // `nvme smart-log` reports temperature in Kelvin per the NVMe spec.
+                    if let Some(temp) = smart.get("temperature").and_then(Value::as_f64) {
+                        let celsius = ((temp - 273.15) * 10.0).round() / 10.0;
+                        smart["temperature"] = serde_json::json!(celsius);
+                    }
+                    smart
+                })
         };
 
         drives.push(json!({
