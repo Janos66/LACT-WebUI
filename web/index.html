@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>LACT</title>
+    <link rel="icon" href="/assets/lact.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 7v4.2M8 4.7v.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 16 16"><path d="M2.3 11.4a6.2 6.2 0 1 1 11.4 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M8 9.2 10.9 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="9.6" r="1.1" fill="currentColor"/></symbol>
+      <symbol id="i-fan" viewBox="0 0 16 16"><circle cx="8" cy="8" r="1.7" fill="currentColor"/><path d="M8 6.3c0-2.2.6-3.7 1.9-3.7 1 0 1.6.9 1.6 2 0 1.5-1.6 2.4-3.5 1.7M9.7 8c2.2 0 3.7.6 3.7 1.9 0 1-.9 1.6-2 1.6-1.5 0-2.4-1.6-1.7-3.5M8 9.7c0 2.2-.6 3.7-1.9 3.7-1 0-1.6-.9-1.6-2 0-1.5 1.6-2.4 3.5-1.7M6.3 8c-2.2 0-3.7-.6-3.7-1.9 0-1 .9-1.6 2-1.6 1.5 0 2.4 1.6 1.7 3.5" fill="currentColor" opacity=".85"/></symbol>
+      <symbol id="i-package" viewBox="0 0 16 16"><path d="M8 1.8 13.8 5v6L8 14.2 2.2 11V5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M2.2 5 8 8.2 13.8 5M8 8.2v6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 16 16"><rect x="1.8" y="2.6" width="12.4" height="8.2" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.6 13.4h4.8M8 10.8v2.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+      <symbol id="i-server" viewBox="0 0 16 16"><rect x="2" y="2.4" width="12" height="4.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="9.2" width="12" height="4.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="4.6" cy="4.6" r=".85" fill="currentColor"/><circle cx="4.6" cy="11.4" r=".85" fill="currentColor"/></symbol>
+      <symbol id="i-chevron-down" viewBox="0 0 16 16"><path d="m4.6 6.4 3.4 3.4 3.4-3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 16 16"><path d="M2.6 8h10.8M2.6 4.4h10.8M2.6 11.6h10.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 16 16"><path d="M2.4 13.4h11.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="m3.4 10.6 3-3.4 2.6 2.2 3.6-4.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-check" viewBox="0 0 16 16"><path d="m3.4 8.4 3 3 6.2-6.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-x" viewBox="0 0 16 16"><path d="m4.4 4.4 7.2 7.2M11.6 4.4l-7.2 7.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.6-3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M13.2 2.4v3.2H10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-power" viewBox="0 0 16 16"><path d="M8 2.2v5.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11.6 4.2a5 5 0 1 1-7.2 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+      <symbol id="i-thermometer" viewBox="0 0 16 16"><path d="M6.4 9.2V3.6a1.6 1.6 0 1 1 3.2 0v5.6a2.8 2.8 0 1 1-3.2 0Z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="11.6" r="1.2" fill="currentColor"/></symbol>
+      <symbol id="i-download" viewBox="0 0 16 16"><path d="M8 2.6v7.2M5 7l3 3 3-3M3 13h10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 16 16"><path d="M3 4.6h10M6.2 4.6V3.2h3.6v1.4M4.4 4.6l.6 8.2h6l.6-8.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.4v9.2M3.4 8h9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="i-cpu" viewBox="0 0 16 16"><rect x="3.6" y="3.6" width="8.8" height="8.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="6.2" y="6.2" width="3.6" height="3.6" rx=".8" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.4 1.8v1.8M9.6 1.8v1.8M6.4 12.4v1.8M9.6 12.4v1.8M1.8 6.4h1.8M1.8 9.6h1.8M12.4 6.4h1.8M12.4 9.6h1.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></symbol>
+      <symbol id="i-database" viewBox="0 0 16 16"><ellipse cx="8" cy="3.9" rx="5.2" ry="2.1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.8 3.9v8.2c0 1.2 2.3 2.1 5.2 2.1s5.2-.9 5.2-2.1V3.9M2.8 8c0 1.2 2.3 2.1 5.2 2.1s5.2-.9 5.2-2.1" fill="none" stroke="currentColor" stroke-width="1.3"/></symbol>
+      <symbol id="i-logout" viewBox="0 0 16 16"><path d="M9.6 3.2H4.2a1.4 1.4 0 0 0-1.4 1.4v6.8a1.4 1.4 0 0 0 1.4 1.4h5.4M10.6 5.6 13 8l-2.4 2.4M6.6 8H13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-warning" viewBox="0 0 16 16"><path d="M8 2.2 14.4 13H1.6z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.4v3.2M8 11.4v.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    </svg>
+
+    <div id="app" class="app" hidden>
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <div class="brand">
+            <img src="/assets/lact.svg" alt="" class="brand-logo" />
+            <span class="brand-name">LACT</span>
+            <span class="brand-sub" id="webui-version"></span>
+          </div>
+
+          <div class="picker" id="device-picker">
+            <button class="picker-button" id="device-picker-button" type="button">
+              <svg class="icon"><use href="#i-gauge" /></svg>
+              <span class="picker-label" id="device-picker-label">No devices</span>
+              <svg class="icon icon-small"><use href="#i-chevron-down" /></svg>
+            </button>
+            <div class="popover" id="device-picker-popover" hidden></div>
+          </div>
+
+          <div class="picker" id="profile-picker">
+            <button class="picker-button" id="profile-picker-button" type="button">
+              <svg class="icon"><use href="#i-package" /></svg>
+              <span class="picker-label" id="profile-picker-label">Profiles</span>
+              <svg class="icon icon-small"><use href="#i-chevron-down" /></svg>
+            </button>
+            <div class="popover" id="profile-picker-popover" hidden></div>
+          </div>
+        </div>
+
+        <div class="sidebar-separator"></div>
+        <nav class="nav" id="nav"></nav>
+        <div class="sidebar-separator"></div>
+
+        <div class="sidebar-actions">
+          <button class="button suggested" id="apply-button" disabled>Apply</button>
+          <button class="button" id="revert-button" disabled>Revert</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="headerbar">
+          <div class="headerbar-left">
+            <h1 class="page-title" id="page-title">Information</h1>
+            <span class="dirty-dot" id="dirty-dot" hidden title="Unsaved changes"></span>
+          </div>
+          <div class="headerbar-right">
+            <button class="button flat" id="charts-button">
+              <svg class="icon"><use href="#i-chart" /></svg>
+              <span>Historical charts</span>
+            </button>
+            <div class="menu-anchor">
+              <button class="button flat icon-only" id="menu-button" title="Menu">
+                <svg class="icon"><use href="#i-menu" /></svg>
+              </button>
+              <div class="menu" id="menu" hidden></div>
+            </div>
+          </div>
+        </header>
+
+        <div class="banner" id="banner" hidden>
+          <svg class="icon"><use href="#i-warning" /></svg>
+          <span id="banner-text"></span>
+          <button class="button flat" id="banner-action" hidden></button>
+        </div>
+
+        <div class="page" id="page"></div>
+      </main>
+    </div>
+
+    <div class="login" id="login" hidden>
+      <form class="login-card" id="login-form">
+        <img src="/assets/lact.svg" alt="" class="login-logo" />
+        <h1>LACT</h1>
+        <p class="login-sub">Linux GPU Control Application</p>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="login-password" autocomplete="current-password" autofocus />
+        </label>
+        <button class="button suggested wide" type="submit">Sign in</button>
+        <p class="login-error" id="login-error"></p>
+      </form>
+    </div>
+
+    <div class="toasts" id="toasts"></div>
+    <div class="modal-root" id="modal-root"></div>
+
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>

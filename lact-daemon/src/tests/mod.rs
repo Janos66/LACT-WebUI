@@ -1,0 +1,129 @@
+mod mock_fs;
+
+use crate::{
+    config::Config,
+    server::handler::{Handler, read_pci_db},
+};
+use insta::{assert_debug_snapshot, assert_json_snapshot};
+use lact_schema::config::GpuConfig;
+use mock_fs::MockSysfs;
+use std::{fs, path::PathBuf, sync::OnceLock};
+use tempfile::tempdir;
+
+fn init_tracing() {
+    static TRACING_LOCK: OnceLock<()> = OnceLock::new();
+    TRACING_LOCK.get_or_init(|| {
+        tracing_subscriber::fmt()
+            .with_env_filter("easy_fuser=warn,info")
+            .init();
+    });
+}
+
+#[tokio::test(flavor = "local")]
+#[cfg_attr(miri, ignore)]
+async fn snapshot_everything() {
+    init_tracing();
+
+    let test_data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/snapshots");
+    let pci_db = read_pci_db();
+
+    for vendor_dir in fs::read_dir(test_data_dir).unwrap().flatten() {
+        if !vendor_dir.file_type().unwrap().is_dir() {
+            continue;
+        }
+
+        for device_dir in fs::read_dir(vendor_dir.path()).unwrap().flatten() {
+            let test_key = format!(
+                "{}/{}",
+                vendor_dir.file_name().to_string_lossy(),
+                device_dir.file_name().to_string_lossy()
+            );
+
+            let handler = Handler::with_base_path(&device_dir.path(), Config::default(), &pci_db)
+                .await
+                .unwrap();
+            let device_info = handler
+                .generate_snapshot_device_info()
+                .await
+                .into_values()
+                .next()
+                .unwrap();
+            let device_info = serde_json::to_value(&device_info).unwrap();
+
+            assert_json_snapshot!(test_key, device_info);
+        }
+    }
+}
+
+#[tokio::test(flavor = "local")]
+#[cfg_attr(miri, ignore)]
+async fn apply_settings() {
+    init_tracing();
+
+    let test_data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/snapshots");
+    let pci_db = read_pci_db();
+
+    for vendor_dir in fs::read_dir(test_data_dir).unwrap().flatten() {
+        if !vendor_dir.metadata().unwrap().is_dir() {
+            continue;
+        }
+
+        for device_dir in fs::read_dir(vendor_dir.path()).unwrap().flatten() {
+            for entry in fs::read_dir(device_dir.path()).unwrap().flatten() {
+                let name = entry.file_name();
+                let name = name.to_str().unwrap();
+
+                #[allow(clippy::case_sensitive_file_extension_comparisons)]
+                if name.starts_with("config") && name.ends_with(".yaml") {
+                    let test_key = format!(
+                        "apply_config/{}/{}/{name}",
+                        vendor_dir.file_name().to_string_lossy(),
+                        device_dir.file_name().to_string_lossy()
+                    );
+                    let raw_gpu_config = fs::read_to_string(entry.path()).unwrap();
+                    let gpu_config: GpuConfig = serde_norway::from_str(&raw_gpu_config).unwrap();
+
+                    let mock_fs_dir = tempdir().unwrap();
+
+                    let mock_fs = MockSysfs::new(device_dir.path());
+                    let writes = mock_fs.writes.clone();
+
+                    let mount = easy_fuser::fuse_parallel::spawn_mount(
+                        mock_fs,
+                        mock_fs_dir.path(),
+                        &[],
+                        Some(1),
+                    )
+                    .expect("Could not mount mock fs");
+
+                    let handler =
+                        Handler::with_base_path(mock_fs_dir.path(), Config::default(), &pci_db)
+                            .await
+                            .unwrap();
+                    let gpu_id = &handler.list_devices().await[0].id;
+
+                    handler
+                        .config
+                        .write()
+                        .await
+                        .gpus_mut()
+                        .unwrap()
+                        .insert(gpu_id.clone(), gpu_config);
+
+                    handler.apply_current_config().await.unwrap();
+
+                    mount.join();
+                    mock_fs_dir.close().unwrap();
+
+                    let write_commands = writes
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .map(|(name, contents)| format!("{}: {contents}", name.to_str().unwrap()))
+                        .collect::<Vec<String>>();
+                    assert_debug_snapshot!(test_key, write_commands);
+                }
+            }
+        }
+    }
+}

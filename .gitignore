@@ -1,0 +1,12 @@
+/target
+AppDir/
+*.glade\~
+*.AppImage
+*.AppImage.zsync
+appimage-build/
+*.stignore
+pkg/output
+build/
+.flatpak-builder/
+.vscode
+.idea

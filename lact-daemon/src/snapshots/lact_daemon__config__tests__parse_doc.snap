@@ -1,0 +1,118 @@
+---
+source: lact-daemon/src/config.rs
+expression: deserialized_config
+---
+version: 0
+daemon:
+  log_level: info
+  admin_user: foo
+  admin_group: wheel
+  disable_clocks_cleanup: false
+  disable_nvapi: false
+  tcp_listen_address: "127.0.0.1:12853"
+  metrics:
+    collector_address: "http://localhost:9090/api/v1/otlp/v1/metrics"
+    interval: 30
+apply_settings_timer: 5
+gpus:
+  "1002:687F-1043:0555-0000:0b:00.0":
+    fan_control_enabled: true
+    fan_control_settings:
+      mode: curve
+      static_speed: 1
+      temperature_key: edge
+      interval_ms: 500
+      curve:
+        40: 0.2
+        50: 0.35
+        60: 0.5
+        70: 0.75
+        80: 1
+      spindown_delay_ms: 0
+      change_threshold: 0
+      auto_threshold: 0
+    pmfw_options:
+      acoustic_limit: 3200
+      acoustic_target: 1450
+      minimum_pwm: 15
+      target_temperature: 83
+      zero_rpm: true
+      zero_rpm_threshold: 50
+    nvidia_thermal_options:
+      target_temperature: 83
+    power_mizer_mode: Auto
+    power_cap: 320
+    performance_level: auto
+    min_core_clock: 300
+    min_memory_clock: 500
+    min_voltage: 900
+    max_core_clock: 1630
+    max_memory_clock: 800
+    max_voltage: 1200
+    gpu_clock_offsets:
+      0: -100
+    mem_clock_offsets:
+      0: 200
+    gpu_vf_curve:
+      7:
+        voltage: 1200
+        clockspeed: 1590
+    mem_vf_curve:
+      3:
+        clockspeed: 920
+    nvidia_gpu_vf_curve:
+      22:
+        clockspeed_offset: 90
+        voltage: 750
+    voltage_offset: 0
+    voltage_boost: 0
+    power_profile_mode_index: 0
+    custom_power_profile_mode_hueristics:
+      - - 0
+        - 5
+        - 1
+        - 0
+        - 4
+        - 800
+        - 4587520
+        - -65536
+        - 0
+      - - 0
+        - 5
+        - 1
+        - 0
+        - 1
+        - 0
+        - 3276800
+        - -65536
+        - -6553
+      - - 0
+        - 5
+        - 1
+        - 0
+        - 4
+        - 800
+        - 327680
+        - -65536
+        - 0
+    power_states:
+      core_clock:
+        - 0
+        - 2
+        - 3
+      memory_clock:
+        - 0
+        - 1
+    uma_carveout: 1
+profiles:
+  vkcube:
+    rule:
+      type: process
+      filter:
+        name: vkcube
+        args: "--my-arg"
+    hooks:
+      activated: echo foo >> /tmp/log
+      deactivated: echo bar >> /tmp/log
+current_profile: vkcube
+auto_switch_profiles: true

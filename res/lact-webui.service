@@ -1,0 +1,25 @@
+[Unit]
+Description=LACT GPU Control Web UI
+Documentation=https://github.com/Janos66/LACT-WebUI
+After=network-online.target lactd.service
+Wants=lactd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/lact-webui
+Restart=on-failure
+RestartSec=2
+# The web UI talks to /run/lactd.sock; root is required to pass the daemon's polkit checks.
+# It never executes user-supplied commands: every request is a typed message to lactd.
+User=root
+NoNewPrivileges=true
+ProtectHome=read-only
+ProtectSystem=strict
+PrivateTmp=true
+ReadWritePaths=/run /var/log
+# Hardening: the web UI needs no device access of its own.
+DevicePolicy=closed
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
