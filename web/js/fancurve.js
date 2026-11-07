@@ -40,6 +40,18 @@ export class FanCurveEditor {
 
     this.dragIndex = null;
     this.render();
+
+    // While the page is being built this container is detached and reports a width
+    // of 0, so the chart draws with the fallback width. The SVG is then stretched by
+    // the layout to the real width, which compresses the curve and misaligns it with
+    // the axis ticks. Re-draw whenever the container actually gets its real size (mount
+    // and resize) instead of leaving it distorted until a drag-click fixes it.
+    const resize = () => {
+      const width = this.container.clientWidth;
+      if (width > 0 && Math.abs(width - this.width) >= 8) this.render();
+    };
+    this.resizeObserver = new ResizeObserver(resize);
+    this.resizeObserver.observe(container);
   }
 
   setTempRange(range) {
