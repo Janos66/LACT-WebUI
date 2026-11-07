@@ -206,11 +206,10 @@ export class FanCurveEditor {
       this.pointLayer.append(circle);
     });
 
-    svgEl.addEventListener("pointerdown", (event) => {
-      if (event.target.closest(".curve-point")) return;
-      this.addPointAt(event);
-    });
-
+    // Note: no point insertion on click. The user wants a fixed set of curve
+    // points (5 on the RX 7900 XTX), and the daemon rejects curves with more
+    // points than the hardware supports. Only the existing points can be moved;
+    // right-click still removes a point (see the removePoint tooltip).
     svgEl.addEventListener("pointermove", (event) => this.onPointerMove(event));
     svgEl.addEventListener("pointerup", () => this.endDrag());
     svgEl.addEventListener("pointercancel", () => this.endDrag());
@@ -336,25 +335,6 @@ export class FanCurveEditor {
     if (this.dragIndex === null) return;
     this.dragIndex = null;
     this.emit();
-  }
-
-  addPointAt(event) {
-    const rect = this.svgEl.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * (this.width / rect.width);
-    const y = (event.clientY - rect.top) * (this.height / rect.height);
-
-    if (x < this.plot.x || x > this.plot.x + this.plot.w) return;
-    if (y < this.plot.y || y > this.plot.y + this.plot.h) return;
-
-    const temp = Math.round(this.xToTemp(x));
-    const speed = this.yToSpeed(y);
-
-    if (this.points.some((point) => Math.abs(point.temp - temp) < MIN_GAP)) return;
-
-    this.points.push({ temp, speed });
-    this.points.sort((a, b) => a.temp - b.temp);
-    this.emit();
-    this.render();
   }
 
   removePoint(index) {
