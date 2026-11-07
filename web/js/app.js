@@ -90,7 +90,7 @@ dom.loginForm.addEventListener("submit", async (event) => {
   }
 });
 
-document.title = "LACT";
+document.title = "LACT-WebUI";
 
 applyTheme(theme);
 void boot();
