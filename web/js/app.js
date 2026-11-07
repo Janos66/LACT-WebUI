@@ -549,7 +549,16 @@ async function applyChanges() {
   dom.apply.disabled = true;
 
   try {
-    const response = await api.device.setConfig(state.deviceId, state.draft);
+    // The daemon rejects a config that carries `power_states` while the performance
+    // level is not `manual` ("Performance level has to be set to `manual`..."). The
+    // draft keeps the saved states across level switches, so drop them here —
+    // switching the level is the way to clear the restriction anyway.
+    const config = clone(state.draft);
+    if (config.performance_level !== "manual") {
+      delete config.power_states;
+    }
+
+    const response = await api.device.setConfig(state.deviceId, config);
     const autoRevert = Number(response?.auto_revert_ms ?? 0);
 
     if (autoRevert > 0) {
@@ -558,7 +567,7 @@ async function applyChanges() {
       toast("Settings applied", "success");
     }
 
-    set({ config: clone(state.draft) });
+    set({ config: clone(config) });
     updateChrome();
   } catch (error) {
     toast(error.message, "error");

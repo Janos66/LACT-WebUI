@@ -102,20 +102,28 @@ The service can also be used standalone with a config file, for example in headl
 
 # Installation
 
-This fork is not packaged by any distribution or repository — install it from source:
+This fork is not packaged by any distribution or repository — build it from source:
 
+```sh
+git clone https://github.com/Janos66/LACT-WebUI.git
+cd LACT-WebUI
+
+# Rust toolchain (stable)
+rustup update stable
+
+# Debian/Ubuntu build dependencies for the daemon (libclang is needed by bindgen):
+sudo apt-get install -y build-essential libclang-dev clang pkg-config
+
+# Build, install the systemd units and create the first admin account
+# (you will be asked for your sudo password):
+sudo ./scripts/install.sh
 ```
-sudo ./scripts/install.sh        # builds, installs, creates the first admin account
-```
 
-or manually (see the top of this README for the short version).
+The installer supports a few options, all shown by running `./scripts/install.sh` without
+arguments: `--prefix /usr`, `--listen 0.0.0.0:12800`, `--no-build`, `--skip-account`.
 
-Note: the packages available in the distro repositories, the AUR, NixOS,
-Flathub and upstream releases install **upstream LACT** (the GTK desktop
-application), not this fork.
-
-Note: Nvidia support requires the Nvidia proprietary driver with CUDA
-libraries installed.
+Note: Nvidia support requires the Nvidia proprietary driver with CUDA libraries
+installed.
 
 ## Development builds
 
@@ -394,8 +402,8 @@ using the option in the dropdown menu:
 The snapshot is an archive which includes the SysFS that LACT uses to interact
 with the GPU.
 
-If there's a crash, run `lact gui` from the command line to get GUI logs, check
-daemon logs in `journalctl -u lactd` for errors, and see `dmesg` for kernel logs
+If there's a crash, run `lact daemon` from the command line for daemon logs, check
+`journalctl -u lactd` for errors, and see `dmesg` for kernel logs
 that might include information about driver and system issues.
 
 # Localization
