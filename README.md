@@ -43,6 +43,17 @@ system.
 | Software info                     | Historical data                   |                                   |
 | ![image](./res/screenshots/4.png) | ![image](./res/screenshots/5.png) |                                   |
 
+### Disclaimer
+
+- **No warranty.** I take no liability for possible hardware damage caused by this
+  software — you use it at your own risk.
+- **Tested on one system only.** LACT-WebUI has only been tested on a single machine
+  with two AMD Radeon RX 7900 XTX GPUs. Other hardware or configurations may
+  behave differently and are untested.
+- **Interface only.** LACT-WebUI replaces only the interface. The actual core of
+  the application (daemon, GPU handling, overclocking logic, config format) is
+  100% upstream LACT and unmodified — see [SPEC.md](SPEC.md) for the details.
+
 ### Features:
 
 - #### Detailed GPU information reporting
