@@ -42,6 +42,13 @@ async fn call(state: &AppState, request: DaemonRequest<'_>) -> ApiResult<Json<Va
     Ok(Json(state.daemon.call_raw(request).await?))
 }
 
+/// The daemon reports its auto-revert delay in seconds (`Config::apply_settings_timer`,
+/// consumed as `Duration::from_secs` in `handler.rs::wait_config_confirm`); the browser expects
+/// milliseconds. Scaling happens here, in the webui layer, so the daemon stays upstream.
+fn auto_revert_ms(seconds: u64) -> Json<Value> {
+    Json(json!({ "auto_revert_ms": seconds * 1000 }))
+}
+
 pub async fn list_devices(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let value = state.daemon.call_raw(DaemonRequest::ListDevices).await?;
 
@@ -198,17 +205,15 @@ pub async fn set_config(
     let config: GpuConfig = serde_json::from_value(body)
         .map_err(|err| ApiError::bad_request(format!("invalid GPU config: {err}")))?;
 
-    let value = state
+    let value: u64 = state
         .daemon
-        .call_raw(DaemonRequest::SetGpuConfig {
+        .call_typed(DaemonRequest::SetGpuConfig {
             id: &id,
             config: Box::new(config),
         })
         .await?;
 
-    // The daemon returns the number of milliseconds it will wait for a confirmation before
-    // reverting the change. The browser shows a countdown for exactly that long.
-    Ok(Json(json!({ "auto_revert_ms": value })))
+    Ok(auto_revert_ms(value))
 }
 
 #[derive(Deserialize)]
@@ -265,9 +270,9 @@ pub async fn set_fan(
 ) -> ApiResult<Json<Value>> {
     ensure_allowed(&state, &id)?;
 
-    let value = state
+    let value: u64 = state
         .daemon
-        .call_raw(DaemonRequest::SetFanControl(FanOptions {
+        .call_typed(DaemonRequest::SetFanControl(FanOptions {
             id: &id,
             enabled: body.enabled,
             mode: body.mode,
@@ -279,7 +284,7 @@ pub async fn set_fan(
         }))
         .await?;
 
-    Ok(Json(json!({ "auto_revert_ms": value })))
+    Ok(auto_revert_ms(value))
 }
 
 #[derive(Deserialize)]
@@ -294,15 +299,15 @@ pub async fn set_power_cap(
 ) -> ApiResult<Json<Value>> {
     ensure_allowed(&state, &id)?;
 
-    let value = state
+    let value: u64 = state
         .daemon
-        .call_raw(DaemonRequest::SetPowerCap {
+        .call_typed(DaemonRequest::SetPowerCap {
             id: &id,
             cap: body.cap,
         })
         .await?;
 
-    Ok(Json(json!({ "auto_revert_ms": value })))
+    Ok(auto_revert_ms(value))
 }
 
 #[derive(Deserialize)]
@@ -317,15 +322,15 @@ pub async fn set_performance_level(
 ) -> ApiResult<Json<Value>> {
     ensure_allowed(&state, &id)?;
 
-    let value = state
+    let value: u64 = state
         .daemon
-        .call_raw(DaemonRequest::SetPerformanceLevel {
+        .call_typed(DaemonRequest::SetPerformanceLevel {
             id: &id,
             performance_level: body.level,
         })
         .await?;
 
-    Ok(Json(json!({ "auto_revert_ms": value })))
+    Ok(auto_revert_ms(value))
 }
 
 pub async fn set_clocks(
@@ -335,15 +340,15 @@ pub async fn set_clocks(
 ) -> ApiResult<Json<Value>> {
     ensure_allowed(&state, &id)?;
 
-    let value = state
+    let value: u64 = state
         .daemon
-        .call_raw(DaemonRequest::BatchSetClocksValue {
+        .call_typed(DaemonRequest::BatchSetClocksValue {
             id: &id,
             commands,
         })
         .await?;
 
-    Ok(Json(json!({ "auto_revert_ms": value })))
+    Ok(auto_revert_ms(value))
 }
 
 #[derive(Deserialize)]
@@ -360,16 +365,16 @@ pub async fn set_power_profile_mode(
 ) -> ApiResult<Json<Value>> {
     ensure_allowed(&state, &id)?;
 
-    let value = state
+    let value: u64 = state
         .daemon
-        .call_raw(DaemonRequest::SetPowerProfileMode {
+        .call_typed(DaemonRequest::SetPowerProfileMode {
             id: &id,
             index: body.index,
             custom_heuristics: body.custom_heuristics,
         })
         .await?;
 
-    Ok(Json(json!({ "auto_revert_ms": value })))
+    Ok(auto_revert_ms(value))
 }
 
 #[derive(Deserialize)]
@@ -385,16 +390,16 @@ pub async fn set_power_states(
 ) -> ApiResult<Json<Value>> {
     ensure_allowed(&state, &id)?;
 
-    let value = state
+    let value: u64 = state
         .daemon
-        .call_raw(DaemonRequest::SetEnabledPowerStates {
+        .call_typed(DaemonRequest::SetEnabledPowerStates {
             id: &id,
             kind: body.kind,
             states: body.states,
         })
         .await?;
 
-    Ok(Json(json!({ "auto_revert_ms": value })))
+    Ok(auto_revert_ms(value))
 }
 
 pub async fn dump_vbios(

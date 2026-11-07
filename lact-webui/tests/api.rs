@@ -162,8 +162,11 @@ fn mock_response(request: &Value) -> Value {
             "power_states": {},
             "uma_carveout": null
         }),
-        "set_gpu_config" => json!(5000),
-        "set_fan_control" => json!(5000),
+        // The real daemon returns `apply_settings_timer` in SECONDS here (see handler.rs
+        // `wait_config_confirm` -> `Duration::from_secs(apply_timer)`). The webui HTTP layer
+        // scales it to milliseconds.
+        "set_gpu_config" => json!(5),
+        "set_fan_control" => json!(5),
         "list_profiles" => json!({
             "profiles": { "Default": null, "Gaming": null },
             "profile_hooks": {},
