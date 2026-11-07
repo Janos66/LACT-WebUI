@@ -464,53 +464,78 @@ export default {
       );
 
       function openStates(kind, title, states) {
-        const enabledIds = new Set(
-          draft.power_states?.[kind] ?? states.filter((state) => state.enabled).map((state) => state.id ?? state.value),
-        );
+      // The wire shape of `id` is the tagged enum `PowerLevelId`: `Sleep` (unit) or
+      // `{"Index": n}`. Only the indexed levels are selectable — the sleep state is always
+      // allowed by the driver — and the daemon's `SetEnabledPowerStates` expects a `Vec<u8>`
+      // of indexes. Sending objects instead fails deserialization ("invalid GPU setting").
+      const indexIdOf = (state) => {
+        if (typeof state.id === "number") return state.id;
+        if (state.id && typeof state.id === "object") return state.id.Index ?? null;
+        return null;
+      };
+      const isSleep = (state) => state.id === "Sleep";
 
-        const body = el("div", { class: "stack" });
+      const enabledIds = new Set(
+        (draft.power_states?.[kind] ?? [])
+          .filter((value) => typeof value === "number")
+          .concat(
+            draft.power_states?.[kind]
+              ? []
+              : states.map(indexIdOf).filter((id) => id != null),
+          ),
+      );
 
-        for (const state of states) {
-          const id = state.id ?? state.value;
-          const toggle = switchControl({
-            checked: enabledIds.has(id),
-            onChange: (value) => {
-              if (value) enabledIds.add(id);
-              else enabledIds.delete(id);
-            },
-          });
+      const body = el("div", { class: "stack" });
 
-          body.append(
-            el("div", { class: "row" },
-              el("div", { class: "row-label" },
-                el("span", { class: "row-title" }, `State ${id}`),
-                el("span", { class: "row-subtitle" },
-                  [state.value ? `${state.value} MHz` : null, state.min_value ? `min ${state.min_value} MHz` : null]
-                    .filter(Boolean).join(" · ") || "—"),
-              ),
-              el("div", { class: "row-control" }, toggle),
-            ),
-          );
-        }
-
-        modal({
-          title,
-          body,
-          actions: [
-            { label: "Cancel" },
-            {
-              label: "Save",
-              kind: "suggested",
-              onClick: () => {
-                ctx.edit((config) => {
-                  config.power_states = { ...(config.power_states || {}), [kind]: [...enabledIds].sort((a, b) => a - b) };
-                });
-                ctx.rerender();
+      for (const state of states) {
+        const id = indexIdOf(state);
+        const sleep = isSleep(state);
+        const rowControl = sleep
+          ? el("span", { class: "hint" }, "always enabled by the driver")
+          : switchControl({
+              checked: enabledIds.has(id),
+              onChange: (value) => {
+                if (value) enabledIds.add(id);
+                else enabledIds.delete(id);
               },
-            },
-          ],
-        });
+            });
+
+        body.append(
+          el("div", { class: "row" },
+            el("div", { class: "row-label" },
+              el("span", { class: "row-title" }, `State ${id}`),
+              el("span", { class: "row-subtitle" },
+                [state.value ? `${state.value} MHz` : null, state.min_value ? `min ${state.min_value} MHz` : null]
+                  .filter(Boolean).join(" · ") || "—"),
+            ),
+            el("div", { class: "row-control" }, rowControl),
+          ),
+        );
       }
+
+      modal({
+        title,
+        body,
+        actions: [
+          { label: "Cancel" },
+          {
+            label: "Save",
+            kind: "suggested",
+            onClick: () => {
+              if (enabledIds.size === 0) {
+                toast("At least one state must stay enabled", "error");
+                return;
+              }
+
+              ctx.edit((config) => {
+                config.power_states = { ...(config.power_states || {}), [kind]: [...enabledIds].sort((a, b) => a - b) };
+              });
+              ctx.rerender();
+            },
+          },
+        ],
+      });
+    }
     }
 
     // ------------------------------------------------------------------ maintenance
