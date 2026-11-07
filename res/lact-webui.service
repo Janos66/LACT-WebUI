@@ -1,7 +1,12 @@
 [Unit]
 Description=LACT GPU Control Web UI
 Documentation=https://github.com/Janos66/LACT-WebUI
-After=network-online.target lactd.service
+# After=multi-user.target is required: upstream lactd.service itself starts
+# After=multi-user.target. Without it, WantedBy=multi-user.target + After=lactd
+# creates a start-ordering cycle (target -> webui -> daemon -> target) and systemd
+# silently deletes the webui start job at boot, leaving the UI down after every
+# reboot. This unit must therefore start after the target completes.
+After=network-online.target lactd.service multi-user.target
 Wants=lactd.service
 
 [Service]
