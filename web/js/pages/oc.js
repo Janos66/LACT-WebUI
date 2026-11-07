@@ -178,10 +178,32 @@ export default {
         ),
       );
 
+    // `clocks.max_sclk` is the currently applied maximum, not a ceiling: once a custom maximum
+    // is saved, bounding the input by it makes every higher value snap back to it (the input
+    // silently clamps). The od range in the clocks table is the actual hardware limit, so
+    // use that as the input ceiling and the "hardware maximum" hint; fall back to the current
+    // value when the table is not available.
+    const sclkCeiling = clocks?.table?.type === "amd"
+      ? clocks?.table?.value?.data?.od_range?.sclk?.max ?? null
+      : null;
+    const mclkCeiling = clocks?.table?.type === "amd"
+      ? clocks?.table?.value?.data?.od_range?.mclk?.max ?? null
+      : null;
+
     clocksSection.body.append(
-      clockRow("Maximum core clock", "max_core_clock", clocks?.max_sclk ? `hardware maximum ${clocks.max_sclk} MHz` : null, clocks?.max_sclk ?? null),
+      clockRow(
+        "Maximum core clock",
+        "max_core_clock",
+        sclkCeiling != null ? `hardware maximum ${sclkCeiling} MHz` : null,
+        sclkCeiling ?? clocks?.max_sclk ?? null,
+      ),
       clockRow("Minimum core clock", "min_core_clock"),
-      clockRow("Maximum memory clock", "max_memory_clock", clocks?.max_mclk ? `hardware maximum ${clocks.max_mclk} MHz` : null, clocks?.max_mclk ?? null),
+      clockRow(
+        "Maximum memory clock",
+        "max_memory_clock",
+        mclkCeiling != null ? `hardware maximum ${mclkCeiling} MHz` : null,
+        mclkCeiling ?? clocks?.max_mclk ?? null,
+      ),
       clockRow("Minimum memory clock", "min_memory_clock"),
     );
 
