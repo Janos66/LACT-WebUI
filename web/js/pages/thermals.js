@@ -30,6 +30,12 @@ export default {
     const fan = stats.fan || {};
     const root = el("div", { class: "stack" });
 
+    // The fan curve editor is created inside renderPanel() (a nested function, so `this`
+    // is undefined there). Keep a render()-scoped reference for onStats instead of
+    // storing it on `this` — onStats is invoked as a method of the returned object,
+    // not of the page, so `this._editor` was always undefined there.
+    let curveEditor = null;
+
     const tiles = {
       temp: tile("Temperature", fmt.temp(primaryTemp(stats)), { iconName: "thermometer" }),
       rpm: tile(
@@ -265,8 +271,7 @@ export default {
         ),
       );
 
-      this._editor = editor;
-      this._updateLegend = updateLegend;
+      curveEditor = editor;
     }
 
     renderPanel();
@@ -387,7 +392,7 @@ export default {
             ? (nextFan.pwm_current / 255) * 100
             : null,
         );
-        if (this._editor) this._editor.setCurrentTemp(primaryTemp(nextStats));
+        if (curveEditor) curveEditor.setCurrentTemp(primaryTemp(nextStats));
       },
     };
   },
