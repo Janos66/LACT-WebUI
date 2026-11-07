@@ -50,14 +50,15 @@ export function set(partial, reason = "update") {
   for (const listener of listeners) listener(reason);
 }
 
-/** Primary temperature sensor: the daemon marks one entry as `primary`. */
+/** Primary temperature sensor: the daemon marks one entry as `primary`, with the
+ * current temperature in `current` (TemperatureEntry), not `value`. */
 export function primaryTemp(stats) {
   if (!stats || !stats.temps) return null;
   const entries = Object.entries(stats.temps);
   if (entries.length === 0) return null;
   const primary = entries.find(([, value]) => value.primary !== false);
   const [, entry] = primary || entries[0];
-  return typeof entry === "object" ? entry.value : entry;
+  return typeof entry === "object" ? entry.current ?? entry.value : entry;
 }
 
 export function recordHistory(stats) {
