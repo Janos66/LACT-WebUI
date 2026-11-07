@@ -102,65 +102,44 @@ The service can also be used standalone with a config file, for example in headl
 
 # Installation
 
-- Arch Linux: Install the package from official repositories: `pacman -S lact`
-  (or `lact-git` from AUR for development builds).
-- Debian/Ubuntu/Derivatives: Download a .deb from
-  [releases](https://github.com/ilya-zlobintsev/LACT/releases/).
+This fork is not packaged by any distribution or repository — install it from source:
 
-  It is only available on Debian 13+ and Ubuntu 24.04+ as older versions don't
-  ship gtk4.14+
-- Fedora: use the
-  [Copr repository](https://copr.fedorainfracloud.org/coprs/ilyaz/LACT/), or
-  download an RPM from
-  [releases](https://github.com/ilya-zlobintsev/LACT/releases/).
-- Bazzite/Fedora Atomic: Use the Flatpak.
-- Gentoo: Available in
-  [GURU](https://github.com/gentoo/guru/tree/master/sys-apps/lact).
-- OpenSUSE: an RPM is available in
-  [releases](https://github.com/ilya-zlobintsev/LACT/releases/).
+```
+sudo ./scripts/install.sh        # builds, installs, creates the first admin account
+```
 
-  Only tumbleweed is supported as leap does not have the required dependencies
-  in the repos.
-- NixOS: There is a package available in
-  [nixpkgs](https://search.nixos.org/packages?channel=unstable&from=0&size=50&sort=relevance&type=packages&query=lact).
-- Solus: Available in the official repository: `eopkg it lact`
-- Flatpak (universal): Available on [Flathub](https://flathub.org/apps/io.github.ilya_zlobintsev.LACT) and in [releases](https://github.com/ilya-zlobintsev/LACT/releases/).
+or manually (see the top of this README for the short version).
 
-  See the [Flatpak documentation](./flatpak/README.md) for additional notes.
-- Docker (service only, no GUI): See [DOCKER.md](./docs/DOCKER.md)
-- Build from source.
+Note: the packages available in the distro repositories, the AUR, NixOS,
+Flathub and upstream releases install **upstream LACT** (the GTK desktop
+application), not this fork.
 
-Note: Nvidia support requires the Nvidia proprietary driver with CUDA libraries
-installed.
+Note: Nvidia support requires the Nvidia proprietary driver with CUDA
+libraries installed.
 
 ## Development builds
 
-To get latest fixes or features that have not yet been released in a stable
-version, there are packages built from the latest commit that you can install
-from the
-[test release](https://github.com/ilya-zlobintsev/LACT/releases/tag/test-build)
-or using the `lact-git` AUR package on Arch-based distros.
-
-Note: the date that GitHub shows next to the test release is not when the packages were built,
-the actual date is specified next to the attached package files.
+Not applicable to this fork — there is no packaging or release pipeline for
+LACT-WebUI yet; build from source.
 
 # Usage
 
-Enable and start the service (otherwise you won't be able to change any
+Enable and start the services (otherwise you won't be able to change any
 settings):
 
 ```
-sudo systemctl enable --now lactd
+sudo systemctl enable --now lactd lact-webui
 ```
 
-You can now use the GUI to change settings and view information.
+You can now open `http://<host>:12800` in a browser and change settings or
+view information (log in with the admin account created during installation).
 
 # Configuration
 
-There is a configuration file available in `/etc/lact/config.yaml`. Most of the
-settings are accessible through the GUI, but some of them may be useful to be
-edited manually (like `admin_group` and `admin_user` to specify who has access
-to the daemon)
+There is a configuration file available in `/etc/lact/config.yaml`. Most of
+the settings are accessible through the web UI, but some of them may be useful
+to be edited manually (like `admin_group` and `admin_user` to specify who has
+access to the daemon)
 
 See [CONFIG.md](./docs/CONFIG.md) for more information.
 
@@ -257,32 +236,24 @@ Headless build with no GUI:
 make build-release-headless
 ```
 
-# Remote management
+# Remote access
 
-It's possible to have the LACT daemon running on one machine, and then manage it
-remotely from another.
+The web UI is the remote access point. It listens on `0.0.0.0:12800` by default
+(see `listen` in `/etc/lact/webui.yaml`); if you narrowed it, set it back to `0.0.0.0`
+to control the machine from another device and restart the service:
 
-This is disabled by default, as the TCP connection **does not have any
-authentication or encryption mechanism!** Make sure to only use it in trusted
-networks and/or set up appropriate firewall rules.
-
-To enable it, edit `/etc/lact/config.yaml` and add `tcp_listen_address` with
-your desired address and in the `daemon` section.
-
-Example:
-
-```yaml
-daemon:
-  tcp_listen_address: 0.0.0.0:12853
-  log_level: info
-  admin_group: wheel
-  disable_clocks_cleanup: false
+```
+sudo systemctl restart lact-webui
 ```
 
-After this restart the service (`sudo systemctl restart lactd`).
+Unlike the daemon's raw TCP interface, the web UI always requires password
+authentication and every mutating request is verified server-side. If you
+want TLS (recommended outside a trusted network), terminate it at a reverse
+proxy — see [WEBUI.md](docs/WEBUI.md).
 
-To connect to a remote instance with the GUI, run it with
-`lact gui --tcp-address 192.168.1.10:12853`.
+Note: the daemon's own `tcp_listen_address` option is not used by this fork.
+The web server talks to the daemon over the local unix socket, which keeps
+the privileged daemon out of the network.
 
 # CLI
 
